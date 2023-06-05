@@ -1,0 +1,17 @@
+[ Mon May 29 19:06:30 2023 ] using warm up, epoch: 5
+[ Mon May 29 19:11:27 2023 ] using warm up, epoch: 5
+[ Mon May 29 19:41:18 2023 ] using warm up, epoch: 5
+[ Mon May 29 19:43:13 2023 ] using warm up, epoch: 5
+[ Tue May 30 08:21:32 2023 ] using warm up, epoch: 5
+[ Tue May 30 08:23:14 2023 ] using warm up, epoch: 5
+[ Tue May 30 12:08:02 2023 ] using warm up, epoch: 5
+[ Wed May 31 13:48:15 2023 ] using warm up, epoch: 5
+[ Wed May 31 14:10:39 2023 ] using warm up, epoch: 5
+[ Wed May 31 14:34:39 2023 ] using warm up, epoch: 5
+[ Fri Jun  2 18:39:16 2023 ] using warm up, epoch: 5
+[ Sat Jun  3 02:15:15 2023 ] using warm up, epoch: 5
+[ Sun Jun  4 09:04:11 2023 ] using warm up, epoch: 5
+[ Sun Jun  4 09:12:49 2023 ] using warm up, epoch: 5
+[ Sun Jun  4 09:21:33 2023 ] using warm up, epoch: 5
+[ Sun Jun  4 09:47:23 2023 ] using warm up, epoch: 5
+[ Sun Jun  4 14:02:35 2023 ] using warm up, epoch: 5
