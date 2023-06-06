@@ -790,9 +790,9 @@ class Model(nn.Module):
         self.l6 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=6)
         self.l7 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=7)
         # self.l8 = TCN_ViT_unit(24 * num_of_heads, 24 * num_of_heads, A, num_of_heads=num_of_heads)
-        self.l8 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, stride=2, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=8)
-        self.l9 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=9)
-        self.l10 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=10)
+#         self.l8 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, stride=2, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=8)
+#         self.l9 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=9)
+#         self.l10 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=10)
         # standard ce loss
         self.fc = nn.Linear(24*num_of_heads, num_class)
         
@@ -848,9 +848,9 @@ class Model(nn.Module):
         x = self.l5(x, self.joint_label, groups)
         x = self.l6(x, self.joint_label, groups)
         x = self.l7(x, self.joint_label, groups)
-        x = self.l8(x, self.joint_label, groups)
-        x = self.l9(x, self.joint_label, groups)
-        x = self.l10(x, self.joint_label, groups)
+#         x = self.l8(x, self.joint_label, groups)
+#         x = self.l9(x, self.joint_label, groups)
+#         x = self.l10(x, self.joint_label, groups)
 
         # N*M, C, T, V
         _ , C, T, V = x.size()
