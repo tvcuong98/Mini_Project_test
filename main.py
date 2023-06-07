@@ -504,12 +504,8 @@ class Processor():
 
 
             with torch.cuda.amp.autocast(enabled=use_amp):
-                #output, z = self.model(data, F.one_hot(label, num_classes=self.model.module.num_class))
+                output, z = self.model(data, F.one_hot(label, num_classes=self.model.module.num_class))
                 # output, z = self.model(data, F.one_hot(label, num_classes=self.model.num_class))
-                if isinstance(self.model, nn.DataParallel):
-                  output, z = self.model(data, F.one_hot(label, num_classes=self.model.module.num_class))
-                else:
-                  output, z = self.model(data, F.one_hot(label, num_classes=self.model.num_class))
 
                 loss = self.loss(output, label)
             loss2 = torch.zeros_like(loss).cuda(loss.device)
@@ -583,8 +579,8 @@ class Processor():
                 with torch.no_grad():
                     data = data.float().cuda(self.output_device)
                     label = label.long().cuda(self.output_device)
-                    #output, z = self.model(data, F.one_hot(label, num_classes=self.model.module.num_class))
-                    output, z = self.model(data, F.one_hot(label, num_classes=self.model.num_class))
+                    output, z = self.model(data, F.one_hot(label, num_classes=self.model.module.num_class))
+                    # output, z = self.model(data, F.one_hot(label, num_classes=self.model.num_class))
                     if arg.ema:
                         self.model_ema.cuda(self.output_device)
                         output_ema, z_ema = self.model_ema(data, F.one_hot(label, num_classes=self.model.module.num_class))
@@ -770,7 +766,6 @@ class Processor():
             self.print_log('Done.\n')
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     parser = get_parser()
 
     # load arg form config file
