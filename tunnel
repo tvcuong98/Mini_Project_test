@@ -1,0 +1,390 @@
+#!/usr/bin/env -S bash -O extglob
+# Remark : -k option has been used in curl below to make tunnel run in some old servers (learnt from experience)
+
+kill_proc_tree(){
+  # Brief: Kill (with SIGKILL) all descendants of the process id given
+  local pid
+  for pid in $(pgrep -P "${1}"); do
+    kill_proc_tree "${pid}" &
+  done
+  kill -KILL "${1}" 
+} &>/dev/null; export -f kill_proc_tree
+
+trap "kill_proc_tree $$" INT TERM QUIT HUP
+
+piping_server=https://ppng.io
+
+export TUNNEL_RELAY="${TUNNEL_RELAY:-"${piping_server%/}"}"
+export TUNNEL_L4="${TUNNEL_L4:-TCP}" # L4 stands for Layer 4 (Transport Layer) of the OSI model (i.e. TCP/UDP)
+export script_file="${BASH_SOURCE}"
+export PATH="${PATH}:${script_file%/*}" # So that portable socat installed locally at ~/.bin with tunnel becomes accessible by anyone who doesn't source ~/.bashrc. Handy for crontab execution by root.
+export script_call="${0}"
+
+hmac(){
+  # Usage: hmac <key in hex> <data to be hashed in hex>
+  # The data can also be provided through stdin if not passed as parameter
+  local key="${1}" data="${2}"
+  [[ -n "${data}" ]] || read -rd '' data
+  echo -n "${data}" | xxd -r -p | openssl dgst -sha1 -mac hmac -macopt hexkey:"${key}" | cut -d ' ' -f 2
+}; export -f hmac
+
+sha1(){
+  # Usage: sha1 <string1> <string2>...
+  local string="${@}"
+  sha1sum < <(echo -n "${string}") | cut -d ' ' -f 1
+}; export -f sha1
+
+digest(){
+  # Brief: Generate hex digest of given strings
+  # Usage: digest <string1> <string2>...
+  local val="$(sha1 "${@}")"
+  local key="$(sha1 "TUNNEL_KEY" "${TUNNEL_KEY}")"
+  hmac "${key}" "${val}"
+}; export -f digest
+
+genID(){
+  # Brief: Generate ID unique to localhost and user. Should also work on virtual systems / Heroku dynos.
+  # Usage: genID
+  case "${ID_mode}" in
+    ipfs)
+      ipfs config Identity.PeerID
+      ;;
+    *)
+      local MAC="$(cat /sys/class/net/*/address)"
+      local val="$(sha1 "${MAC}")"
+      local key="$(sha1 "${HOSTNAME}" "${USER}" "${HOME}")"
+      local id="$(hmac "${key}" "${val}" | xxd -r -p | base64)"
+      echo "${id//=/}" # 160 bit hash would always have a single trailing "=" in base64. So get rid of it.
+      ;;
+  esac
+}; export -f genID
+
+duplex(){
+  # Brief: Create duplex (bi-directional) connection to given channels
+  # Usage: duplex <read channel> <write channel>
+  local rchan="${1}" wchan="${2}"
+  socat STDIO "EXEC:curl -k -sfSN ${TUNNEL_RELAY//:/\\:}/${rchan}!!EXEC:curl -k -sfSNT- -o /dev/null ${TUNNEL_RELAY//:/\\:}/${wchan}"
+}; export -f duplex
+
+pub(){
+  # Brief: Publish given string to given channel
+  # Usage: pub <channel> <string>
+  local chan="${1}" msg="${2}"
+  curl -k -m 3 -sfSNd "${msg}" "${TUNNEL_RELAY}/${chan}"
+} &>/dev/null; export -f pub
+
+sub(){
+  # Brief: Read from given channel
+  # Usage: sub <channel>
+  local chan="${1}"
+  curl -k -sfSN "${TUNNEL_RELAY}/${chan}"
+} 2>/dev/null; export -f sub
+
+client(){
+  # Brief: Set up local port forwarding to peer and keep the connection(s) alive
+  # Usage: client <local_port> <peer_ID:peer_port>
+  local self="$(genID):${1}" peer="${2}"
+  local peer_addr="$(digest "${peer}" "${TUNNEL_L4}")"
+  local sess_key="$(dd if=/dev/urandom count=1 bs=20 2>/dev/null | base64)" # Random 160-bit session key
+
+  local -i dial_count=0; echo -en "\ntunnel-client: Dialing...\r"
+  ([[ -n "${TUNNEL_IP}" ]] && timeout 0.1 socat /dev/null "${TUNNEL_L4}:${TUNNEL_IP}:${peer##*:}") || \
+  until pub "${peer_addr}" "${self} ${sess_key}";do
+    echo -en "tunnel-client: Dialing...${dial_count}\r"
+    ((dial_count++))
+  done
+
+  echo -e "tunnel-client: Forwarding localhost:${self##*:} to ${peer}. Session-key ${sess_key}\n"
+  local pairing="$(digest "${self}" "${peer}" "${sess_key}")"
+  local lock="/tmp/${pairing}" socat_lock="/tmp/$(digest "${self}" "${peer}")"
+  flock -nF "${socat_lock}" socat "${TUNNEL_L4}-LISTEN:${self##*:},reuseaddr,fork" \
+    EXEC:"${script_file} -c _forward ${self//:/\\:} ${peer//:/\\:}" &
+
+  # Below is the keepalive (pinging) loop. Otherwise, an idle `curl https://ppng.io/${pairing}` is dropped by 2m.
+  # Failure to ping the server triggers reconnect (with new sess_key for forward secrecy).
+  until [[ -e "${socat_lock}" ]];do sleep 0.01;done; touch "${lock}"; echo "${sess_key}" > "${socat_lock}"
+  # Wait till socat_lock is created by the background socat, then write sess_key therein for `_forward` to read
+  while :; do
+    if [[ "${ID_mode}" == ipfs ]]; then 
+      ipfs swarm connect /ip4/127.0.0.1/tcp/${self##*:}/p2p/${peer%%:*} &>/dev/null || break
+    fi
+    sleep 7
+    ([[ -n "${TUNNEL_IP}" ]] && timeout 0.1 socat /dev/null "${TUNNEL_L4}:${TUNNEL_IP}:${peer##*:}") || \
+    flock -nE0 "${lock}" "${script_file}" -c pub "${pairing}" "ping" || break
+    # -E0 makes sure loop is never exited due to flock, i.e. when failed to acquire lock
+  done && rm -f "${lock}" && client "${@}" # This recursion won't launch socat again thanks to socat_lock
+}>&2; export -f client
+
+server(){
+  # Brief: Listen to incoming connections and forward to local port
+  # Usage server <local_port>
+  local self="$(genID):${1}"
+  local self_addr="$(digest "${self}" "${TUNNEL_L4}")"
+  echo -e "\ntunnel-server: PID=${BASHPID}; Started: $(date)"
+  echo "tunnel-server: Listening for incoming connections to localhost:${self##*:}..."
+  if [[ "${ID_mode}" != ipfs ]]; then
+    echo -e "tunnel-server: For peers to connect, share $(command tput smso 2>/dev/null)\"${self}\"$(command tput rmso 2>/dev/null) & your secret key (if any)\n"
+  else
+    echo -e "tunnel-server: For peers to connect, share $(command tput smso 2>/dev/null)\"$(genID)\"$(command tput rmso 2>/dev/null) & your secret key (if any)\n"
+  fi
+  # Using `command` with tput above, protects against unavailablity of the tput command 
+  local -i req_count=0
+  local buffer loop=true
+  while "${loop}"; do
+    buffer="$(sub "${self_addr}")" || continue
+    local peer="${buffer%% *}" sess_key="${buffer##* }"
+    _forwardee "${peer}" "${self}" "${sess_key}" &
+    echo -e "tunnel-request [#${req_count}]: (From) ${peer} (Session-Key) ${sess_key} (Handler-PID) ${!}\n"
+    ((req_count++))
+  done
+}>&2; export -f server
+
+_forward(){
+  # Brief: Connection manager for client. Called by function: `client`. Type: subshell proc.
+  # Usage: _forward <self_ID:local_port> <peer_ID:peer_port>
+  local self="${1}" peer="${2}"
+  local peer_port="${peer##*:}"
+  local source="${SOCAT_PEERADDR}:${SOCAT_PEERPORT}"
+  if [[ -n "${TUNNEL_IP}" ]] && timeout 0.1 socat /dev/null "${TUNNEL_L4}:${TUNNEL_IP}:${peer_port}"; then # Checks if ${TUNNEL_IP}:${peer_port} is listening
+    echo -e "tunnel-connect: ${source} <--> ${self} <--> ${TUNNEL_IP}:${peer_port}\n" >&2
+    socat STDIO "${TUNNEL_L4}:${TUNNEL_IP}:${peer_port}"
+  else
+  local socat_lock="/tmp/$(digest "${self}" "${peer}")"
+  local sess_key="$(head -n1 "${socat_lock}")" ; [[ -n "${sess_key}" ]] || return 2
+  # Reading sess_key generated during the latest reconnect (Just-In-Time access allowing sess_key to be dynamic!)  
+  local pairing="$(digest "${self}" "${peer}" "${sess_key}")"
+  local lock="/tmp/${pairing}"
+  [[ -e "${lock}" ]] && flock -w 1 "${lock}" "${script_file}" -c pub "${pairing}" "${source}" || return "${?}"
+  echo -e "tunnel-connect: ${source} <--> ${self} <--> ${peer}\n" >&2
+  local wchan="$(digest "${source}" "${self}" "${peer}")" # Out Stream: Source -> Self -> Peer
+  local rchan="$(digest "${peer}" "${self}" "${source}")" # In Stream: Peer -> Self -> Source
+  duplex "${rchan}" "${wchan}"
+  fi
+}; export -f _forward
+
+_forwardee(){
+  # Brief: Connection manager for server. Called by function: `server`. Type: subshell proc.
+  # Usage: _forwardee <peer_ID:peer_port> <self_ID:local_port> <session_key>
+  local peer="${1}" self="${2}" sess_key="${3}"
+  local pairing="$(digest "${peer}" "${self}" "${sess_key}")"
+  local loop=true
+  local source
+  while "${loop}";do
+    source="$(sub "${pairing}")" || return "${?}"
+    [[ "${source}" != "ping" ]] || continue
+    local rchan="$(digest "${source}" "${peer}" "${self}")" # In Stream: Source -> Peer -> Self
+    local wchan="$(digest "${self}" "${peer}" "${source}")" # Out Stream: Self -> Peer-> Source
+    socat "EXEC:${script_file} -c duplex ${rchan} ${wchan}" "${TUNNEL_L4}:localhost:${self##*:}" &
+    echo -e "tunnel-connect: ${source} <--> ${peer} <--> ${self}\nsocat-PID: ${!}\n"
+  done
+}>&2; export -f _forwardee
+
+pscan(){
+  # Brief: Give an unused, random, local TCP/UDP port for the client to listen to
+  local port
+  for port in $(seq 49152 65535 | tac);do
+    socat "${TUNNEL_L4}:localhost:${port}" "SYSTEM:echo data" &>/dev/null || { echo "${port}" && return 0;}
+  done
+  return 1
+}; export -f pscan
+
+update(){
+  # Usage: update [branch]
+  local tmp="$(mktemp /tmp/XXXXX.tunnel.update)" branch="${1:-main}"
+  trap "rm -f ${tmp}" return
+  curl -k -sfSNL -o "${tmp}" https://raw.githubusercontent.com/SomajitDey/tunnel/"${branch}"/tunnel || return "${?}"
+  chmod +rx "${tmp}"
+  mv -f "${tmp}" "${script_file}" 2>/dev/null || sudo mv -f "${tmp}" "${script_file}" &&\
+  echo "Updated to v$(${script_file} -v)"
+}; export -f update
+
+version(){
+  echo 0.2.0
+}; export -f version
+
+usage(){
+  echo "
+  About: tunnel
+  Client (Forwarder): tunnel [options] [-k <secret>] [-b <local-port>] [-I <IP>] <peer-ID:peer-port>
+  Server (Forwardee): tunnel [options] [-k <secret>] <local-port>
+
+  IPFS-Connectee: tunnel [-r <path-to-ipfs-repo>] [-k <secret>] ipfs
+  IPFS-Connector: tunnel [-r <path-to-ipfs-repo>] [-k <secret>] <IPFS-peer-ID-of-connectee>
+  
+  Update: tunnel -c update
+  Install locally: tunnel -c install -l
+  Install system-wide (sudo priviledge required): tunnel -c install
+  
+  Options:
+  
+  -b <local-port>     Forward <local-port>. If absent, forwards a random, unused port shown at stdout.
+  -h                  Help
+  -i                  ID, bound to hardware (MAC), USER, HOME and HOSTNAME
+
+  -I <IP>             If <IP>:<peer-port> is available, connect directly, without going through TUNNEL_RELAY.
+                      This option comes handy when the client-host (e.g. laptop) occasionally gets connected
+                      to the LAN the server is on. When server is found on LAN, client connects through LAN.
+
+  -k <secret>         Authorize with <secret> string. Can use environment variable TUNNEL_KEY instead.
+  -K <PID>            Kill tunnel daemon with process id = <PID>.
+  -l <logfile>        Use <logfile> instead of default stderr. This makes the client/server run as daemon.
+  -p <piping-server>  Choose <piping-server> as the relay. Can use environment variable TUNNEL_RELAY instead.
+  -r <path-to-ipfs-repo> Pass path to IPFS repository
+  -u                  UDP instead of the default TCP. If server uses this option,client must use it too.
+  -v                  Version
+
+  Examples:
+
+    # Generate node ID to be announced to peers
+        tunnel -i
+
+    # Expose local UDP port 4001 (default IPFS port) for peers to connect to
+        TUNNEL_KEY='shared secret' tunnel -u 4001
+
+    # Forward local UDP port 9090 to UDP port 4001 of peer
+        tunnel -uk 'shared secret' -b 9090 'peer_ID:4001'
+
+    # Forward any random unused local TCP port to TCP peer_port
+        tunnel -k 'secret key' 'peer_ID:peer_port'
+
+    # Run server in daemon mode
+        tunnel -l \"/tmp/tunnel-log\" 22
+
+    # SSH to the above peer
+        tunnel -l /dev/null peer_ID:22 # This client will give forwarded local port at stdout
+        ssh user@localhost -p port_obtained_from_client
+        
+    # Peer A has a file. He adds it to IPFS:
+        ipfs add path_to_file # Gives out IPFS hash of file
+        tunnel -k swarm_key ipfs # Exposes ipfs daemon of peer A.
+    
+    # Peer B connects to peer A over IPFS:
+        tunnel -k swarm_key ipfs_peer_ID_of_A # Auto swarm connect with A in background
+    # In another terminal:  
+        ipfs cat ipfs_hash_of_file # Getting the file peer A added to IPFS
+        
+  "
+}; export -f usage
+
+about(){
+  echo \
+"  Tunnel: Peer-to-peer, secure, multiplexed, TCP/UDP port forwarder with NAT/firewall traversal through relay(s)
+  Version: $(version)
+  GitHub: SomajitDey/tunnel
+  Copyright (C) 2021 Somajit Dey
+  License: GNU GPL v3 or later
+  Help: tunnel -h"
+}; export -f about
+
+install(){
+  # Usage: install [-l]
+  local opt OPTIND=1; getopts l opt
+  case "${opt}" in
+    l) 
+      local dest="${HOME}/.bin"
+      local cmd="export PATH=\"\${PATH}:${dest}\""
+      mkdir -p "${dest}"
+      cp -i "${script_file}" "${dest}" &&\
+      (grep -q "^${cmd}" "${HOME}/.bashrc" || echo "${cmd}" >> "${HOME}/.bashrc") && eval "${cmd}"
+      ;;
+    *) 
+      sudo cp -i "${script_file}" /usr/local/bin
+      ;;
+  esac && echo "Installed. Check with command (may need to open a new terminal): tunnel"
+}; export -f install
+
+check_dep(){
+  # Brief: Check if the dependencies are present
+  local -a need dep=( socat curl openssl xxd base64 dd cut awk flock pkill mktemp )
+  local tool
+  for tool in "${dep[@]}";do
+    command -v "${tool}" || need+=($'\n'"  ${tool}")
+  done &>/dev/null
+  if [[ -n "${need[@]}" ]];then 
+    echo "Install these tools first: ${need[@]}"
+    return 1
+  fi
+} >&2; export -f check_dep
+
+launch_ipfs_daemon(){
+  # Brief: Launch daemon if inactive
+  until ipfs swarm peers &>/dev/null;do
+    ipfs daemon --enable-pubsub-experiment >&2 &
+    sleep 3
+  done
+}; export -f launch_ipfs_daemon
+
+main(){
+  check_dep || return 1
+
+  local opt subcommand logfile local_port
+  while getopts K:k:p:uI:r:cl:b:ihv opt; do
+    case "${opt}" in
+      K) kill_proc_tree "${OPTARG}" ; exit;;
+      k) export TUNNEL_KEY="${OPTARG}";;
+      p) export TUNNEL_RELAY="${OPTARG}";;
+      u) export TUNNEL_L4="UDP";;
+      I) export TUNNEL_IP="${OPTARG}";;
+      r) export IPFS_PATH="${OPTARG}";export ID_mode="ipfs";;
+      c) subcommand="set";;
+      l) logfile="${OPTARG}";;
+      b) local_port="${OPTARG}";;
+      i) genID ; exit;;
+      h) usage ; exit;;
+      v) version ; exit;;
+      *) exit 1;;
+    esac
+  done
+  shift "$((OPTIND-1))"
+
+  if [[ -v subcommand ]]; then ${@}; exit "${?}";fi
+
+  local arg="${1}"
+  case "${arg}" in
+    +([[:digit:]]) | ipfs )
+      if [[ "${arg}" == ipfs ]]; then
+        export ID_mode="ipfs"
+        local swarm_listen="$(ipfs config Addresses.Swarm | grep -o '"/ip4/.*/tcp/[^"]*')"
+        arg="${swarm_listen##*/}"
+        ((arg==4001)) || { echo "tunnel-ipfs: Only default tcp port 4001 supported for now. Exiting." >&2; exit 1;}
+        launch_ipfs_daemon
+      fi
+      if [[ -v logfile ]]; then
+        server "${arg}" &> "${logfile}" & local pid="${!}" ; disown
+        echo -n "tunnel-server: daemon-PID=" >&2
+        echo "${pid}"
+        if [[ "${ID_mode}" != ipfs ]];then
+          echo -n "tunnel-server: ID-port-tuple=" >&2
+          echo "$(genID):${arg}"
+        else
+          echo -n "tunnel-server: IPFS-Peer-ID=" >&2
+          echo "$(genID)"
+        fi
+      else
+        server "${arg}"
+      fi
+      ;;
+    +([[:alnum:]+/])?(:+([[:digit:]])) | +([[:alnum:]]) )
+      if [[ "${arg}" == "${arg##*:}" ]]; then
+        export ID_mode="ipfs"
+        launch_ipfs_daemon
+        arg="${arg}:4001"
+      fi
+      local_port="${local_port:-"$(pscan)"}"
+      echo -n "tunnel-client: port=" >&2
+      echo "${local_port}"
+      if [[ -v logfile ]]; then
+        client "${local_port}" "${arg}" &> "${logfile}" & local pid="${!}" ; disown
+        echo -n "tunnel-client: daemon-PID=" >&2
+        echo "${pid}"
+      else
+        client "${local_port}" "${arg}"
+      fi
+      ;;
+    * )
+      about
+      ;;
+  esac
+}; export -f main
+
+[[ "${script_call}" == "${script_file}" ]] && main "${@}" # So that the script doesn't run `main` when sourced

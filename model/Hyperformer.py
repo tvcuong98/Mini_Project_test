@@ -6,7 +6,7 @@ import numpy as np
 
 ### torch version too old for timm
 ### https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/layers
-def drop_path(x, drop_prob: float = 0., training: bool = False, scale_by_keep: bool = True):
+def drop_path(x, drop_prob: float = 0.3, training: bool = False, scale_by_keep: bool = True):
     """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
     This is the same as the DropConnect impl I created for EfficientNet, etc networks, however,
     the original name is misleading as 'Drop Connect' is a different form of dropout in a separate paper...
@@ -224,7 +224,7 @@ class MultiScale_TemporalConv(nn.Module):
             nn.BatchNorm2d(branch_channels),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=(3,1), stride=(stride,1), padding=(1,0)),
-            nn.BatchNorm2d(branch_channels)  # 为什么还要加bn
+            nn.BatchNorm2d(branch_channels)
         ))
 
         self.branches.append(nn.Sequential(
@@ -268,7 +268,7 @@ class DynamicGroupTCN(nn.Module):
                  residual=False,
                  residual_kernel_size=1):
 
-        super().__init__()
+        super(DynamicGroupTCN, self).__init__()
         assert out_channels % (len(dilations) + 2) == 0
 
         # Multiple branches of temporal convolution
@@ -325,28 +325,64 @@ class DynamicGroupTCN(nn.Module):
         elif (in_channels == out_channels) and (stride == 1):
             self.residual = lambda x: x
         else:
-            self.residual = TemporalConv(in_channels, out_channels, kernel_size=residual_kernel_size, stride=stride)
+            self.residual = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=residual_kernel_size, stride=stride),
+                nn.BatchNorm2d(out_channels)
+            )
         # print(len(self.branches))
         # initialize
         self.apply(weights_init)
 
-
-
+    # fix this forward function so that it can process 2 param too
     def forward(self, x):
         # Input dim: (N,C,T,V)
         res = self.residual(x)
         branch_outs = []
-        for tempconv in self.branches:
-            out = tempconv(x)
+        for branch in self.branches:
+            out = branch(x)
             branch_outs.append(out)
 
         out = torch.cat(branch_outs, dim=1)
         out += res
         return out
+    """
+    def forward(self, joint_features, skeleton_features=None):
+        
 
+        #joint_features = joint_features.permute(0, 2, 1, 3)
+        res_joint = self.residual(joint_features)
+        branch_outs_joint = []
+        for branch in self.branches:
+            out_joint = branch(joint_features)
+            branch_outs_joint.append(out_joint)
+            out_joint = torch.cat(branch_outs_joint, dim=1)
+            out_joint += res_joint
+
+        # If skeleton_features is None, then only process joint_features
+        if skeleton_features is None:
+            return out_joint
+
+        # If skeleton_features is provided, process it as well
+        skeleton_features = skeleton_features.permute(0, 2, 1, 3)
+        res_skeleton = self.residual(skeleton_features)
+        branch_outs_skeleton = []
+        for branch in self.branches:
+            out_skeleton = branch(skeleton_features)
+            branch_outs_skeleton.append(out_skeleton)
+
+        out_skeleton = torch.cat(branch_outs_skeleton, dim=1)
+        out_skeleton += res_skeleton
+
+        # Concatenate the output
+        out = torch.cat((out_joint, out_skeleton), dim=1)
+        out = out.permute(0,2,1,3)
+        return out
+"""
 # End of "This is the fixed MultiScale_TemporalConv"
 
+
 # This is the additional D-JSF module:
+"""
 class DJSF(nn.Module):
     def __init__(self, num_joints, num_channels, num_groups):
         super(DJSF, self).__init__()
@@ -354,44 +390,103 @@ class DJSF(nn.Module):
         self.num_joints = num_joints
         self.num_channels = num_channels
         self.num_groups = num_groups
-        
+        # X la N , C , T , V
         # Joint-level feature processing
-        self.joint_pooling = nn.AvgPool1d(num_joints)
-        self.joint_conv = nn.Conv1d(num_channels, num_channels, kernel_size=1)
+        self.joint_pooling = nn.AvgPool1d(num_joints) # N,C,T
+        self.joint_conv = nn.Conv1d(num_channels, num_channels, kernel_size=1) # N,C,T
         
         # Skeleton-level feature processing
         self.skeleton_conv = nn.Conv1d(num_channels, num_channels, kernel_size=3, padding=1)
         
         # Dynamic joint-skeleton fusion
         self.dg_tcn_list = nn.ModuleList()
-        for i in range(num_groups):
-            dg_tcn = DynamicGroupTCN(in_channels=num_channels,
+        # for i in range(num_groups):
+        dg_tcn = DynamicGroupTCN(in_channels=num_channels,
                                      out_channels=num_channels,
-                                     dilations=[2**i])  ### could be choosing lower dilation rate
-            self.dg_tcn_list.append(dg_tcn)
+                                     dilations=[1,2,3,4,5,6])  ### could be choosing lower dilation rate
+        #self.dg_tcn_list.append(dg_tcn)
         
     def forward(self, x):
-        # x has shape (batch_size, num_joints*num_channels, seq_len)
+      print("the shape of x is : " + str(x.shape))
+      # Joint-level feature processing
+      joint_features = x.view(-1, self.num_channels, x.size(2))
+      joint_features = self.joint_pooling(joint_features).squeeze(dim=-1)  # shape: (batch_size*num_groups, num_channels)
+      # joint_features = joint_features.view(-1, self.num_groups, self.num_channels)
+      # Skeleton-level feature processing
+      x = x.mean(dim=3)  # Average out the joint dimension , we need to do this to turn skeleton_features 4D->3D
+      skeleton_features = self.skeleton_conv(x)  # shape: (batch_size*num_groups, num_channels, seq_len)
+      print(skeleton_features.shape)
+    
+      # Dynamic joint-skeleton fusion
+      fused_features_list = []
+      for i in range(self.num_groups):
+          dg_tcn = self.dg_tcn_list[i]
+          print("joint_features:", joint_features)
+          fused_features = dg_tcn(joint_features,skeleton_features)
+          fused_features_list.append(fused_features)
+    
+      # Concatenate and process fused features
+      fused_features = torch.cat(fused_features_list, dim=-1)  # shape: (batch_size*num_groups, num_channels*num_groups)
+      fused_features = fused_features.view(-1, self.num_groups, self.num_channels)  # shape: (batch_size, num_groups, num_channels)
+    
+      output = self.joint_conv(fused_features.permute(0, 2, 1))
+      # output = self.joint_conv(fused_features)
+      return output
+"""
+class DJSF(nn.Module):
+    def __init__(self, num_joints, num_channels, dilations=[1,2,3,4,5,6]):
+        super(DJSF, self).__init__()
+        self.num_joints = num_joints
+        self.num_channels = num_channels
+        self.num_groups = len(dilations)+2
         
-        # Joint-level feature processing
-        joint_features = x.view(-1, self.num_channels, x.size(2))
-        joint_features = self.joint_pooling(joint_features).squeeze(dim=-1)  # shape: (batch_size*num_groups, num_channels)
+        # Define the modules used in the fusion process
+        self.avg_pool = nn.AvgPool1d(kernel_size=num_joints)
+        #self.tcn_skeleton = nn.Conv1d(num_channels, num_channels, kernel_size=3, padding=1, groups=num_groups)
+        self.tcn_skeleton = DynamicGroupTCN(in_channels=num_channels,
+                                            out_channels=num_channels,
+                                            dilations=dilations)
+        #self.tcn_joint = nn.Conv1d(num_channels, num_channels, kernel_size=3, padding=1)
+        self.tcn_joint = DynamicGroupTCN(in_channels=num_channels,
+                                            out_channels=num_channels,
+                                            dilations=dilations)
+        self.fc_gamma = nn.Linear(216*64*1, num_joints)
         
-        # Skeleton-level feature processing
-        skeleton_features = self.skeleton_conv(x)  # shape: (batch_size*num_groups, num_channels, seq_len)
+    def forward(self, x):
+        x_joint = x
+        # Perform average pooling to obtain skeleton-level features
+        # x_skeleton = self.avg_pool(x_joint)
+        x_skeleton=torch.mean(x_joint, dim=3)
         
-        # Dynamic joint-skeleton fusion
-        fused_features_list = []
-        for i in range(self.num_groups):
-            dg_tcn = self.dg_tcn_list[i]
-            fused_features = dg_tcn(joint_features, skeleton_features)
-            fused_features_list.append(fused_features)
         
-        # Concatenate and process fused features
-        fused_features = torch.cat(fused_features_list, dim=-1)  # shape: (batch_size*num_groups, num_channels*num_groups)
-        fused_features = fused_features.view(-1, self.num_groups, self.num_channels)  # shape: (batch_size, num_groups, num_channels)
-        output = self.joint_conv(fused_features.permute(0, 2, 1)).perm
-        return output
+        # Process skeleton-level and joint-level features with TCNs in parallel
+        # x_skeleton_tcn = self.tcn_skeleton(x_skeleton.transpose(1, 2)).transpose(1, 2)
+        # x_joint_tcn = self.tcn_joint(x_joint.transpose(1, 2)).transpose(1, 2)
+        x_skeleton_tcn = self.tcn_skeleton(x_skeleton.transpose(0,1).transpose(1,2).unsqueeze(-1).transpose(1,2).transpose(0,1))
+        x_joint_tcn = self.tcn_joint(x_joint.transpose(0,1).transpose(1,2).transpose(2,3).transpose(1,2).transpose(0,1))
+        #print("shape of x_ske is: " + str(x_skeleton_tcn.shape))
+        #print("shape of x_joint is: " + str(x_joint_tcn.shape))
+        
+        
+        
+        # Apply dynamic joint-skeleton fusion to merge skeleton-level and joint-level features
+        gamma = torch.sigmoid(self.fc_gamma(x_skeleton_tcn.flatten(start_dim=1)))
+        #print("shape of gamma is: " + str(gamma.shape))
+        # Reshape gamma from [128, 25] to [128, 1, 1, 25]
+        gamma = gamma.unsqueeze(1).unsqueeze(2)
+
+        # Now, gamma has shape [128, 1, 1, 25] and x_skeleton_tcn has shape [128, 256, 64, 1]
+
+        # Expand x and gamma so they have compatible shapes
+        x_skeleton_tcn_expanded = x_skeleton_tcn.expand(-1, -1, -1, gamma.size(-1))
+        gamma_expanded = gamma.expand(-1,x_skeleton_tcn.size(1), x_skeleton_tcn.size(2), -1)
+
+        
+        x_joint_fused = x_joint_tcn.transpose(0,3) + gamma_expanded* x_skeleton_tcn_expanded
+        #x_joint_fused = x.transpose(0,1)
+        return x_joint_fused
+
+
 # End of "This is the additional D-JSF module"
 
 
@@ -417,7 +512,7 @@ class unit_tcn(nn.Module):
 
 class MHSA(nn.Module):
     # A is adjacentcy matrix, and is hardcoded in the graph folder
-    def __init__(self, dim_in, dim, A, num_heads=6, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0., insert_cls_layer=0, pe=False, num_point=25,
+    def __init__(self, dim_in, dim, A, num_heads=6, qkv_bias=False, qk_scale=None, attn_drop=0.3, proj_drop=0.3, insert_cls_layer=0, pe=False, num_point=25,
                  outer=True, layer=0,
                  **kwargs):
         super().__init__()
@@ -528,7 +623,7 @@ class MHSA(nn.Module):
 
 # using conv2d implementation after dimension permutation
 class Mlp(nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.,
+    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.3,
                  num_heads=None):
         super().__init__()
         out_features = out_features or in_features
@@ -560,8 +655,8 @@ class Mlp(nn.Module):
 
 
 class unit_vit(nn.Module):
-    def __init__(self, dim_in, dim, A, num_of_heads, add_skip_connection=True,  qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, layer=0,
+    def __init__(self, dim_in, dim, A, num_of_heads, add_skip_connection=True,  qkv_bias=False, qk_scale=None, drop=0.3, attn_drop=0.3,
+                 drop_path=0.3, act_layer=nn.GELU, norm_layer=nn.LayerNorm, layer=0,
                 insert_cls_layer=0, pe=False, num_point=25, **kwargs):
         super().__init__()
         self.norm1 = norm_layer(dim_in)
@@ -639,15 +734,31 @@ class TCN_ViT_unit(nn.Module):
                              pe=pe,
                              num_point=num_point,
                              layer=layer)
-        self.dg_tcn = DynamicGroupTCN(in_channels=in_channels,
+        self.dg_tcn = DynamicGroupTCN(in_channels=out_channels, # fixed this for the mismatch size problem
                                       out_channels=out_channels,
                                       kernel_size=kernel_size)
-        self.djsf = DJSF(num_joints=25,num_channels=in_channels,num_groups=8)
+        self.djsf = DJSF(num_joints=25,num_channels=out_channels)
 
-    def forward(self, x):
-        x = self.vit1(x)
+
+        self.act = nn.ReLU(inplace=True)
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.stride = stride
+        if not residual:
+          self.residual = lambda x: 0
+
+        elif (in_channels == out_channels) and (stride == 1):
+          self.residual = lambda x: x
+
+        else:
+          self.residual = unit_tcn(in_channels, out_channels, kernel_size=1, stride=stride)
+
+    def forward(self, x,joint_label,groups):
+        x = self.vit1(x,joint_label,groups)
         x = self.dg_tcn(x)
         x = self.djsf(x)
+        # x = x+self.residual(x)
+        x = self.act(x)
         return x
 
 class Model(nn.Module):
@@ -670,7 +781,6 @@ class Model(nn.Module):
         self.data_bn = nn.BatchNorm1d(num_person * in_channels * num_point)
         self.joint_label = joint_label
 
-
         self.l1 = TCN_ViT_unit(3, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=1)
         # * num_heads, effect of concatenation following the official implementation
         self.l2 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=2)
@@ -680,9 +790,9 @@ class Model(nn.Module):
         self.l6 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=6)
         self.l7 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=7)
         # self.l8 = TCN_ViT_unit(24 * num_of_heads, 24 * num_of_heads, A, num_of_heads=num_of_heads)
-        self.l8 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, stride=2, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=8)
-        self.l9 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=9)
-        self.l10 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=10)
+        # self.l8 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, stride=2, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=8)
+        # self.l9 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=9)
+        # self.l10 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=10)
         # standard ce loss
         self.fc = nn.Linear(24*num_of_heads, num_class)
         
@@ -738,14 +848,14 @@ class Model(nn.Module):
         x = self.l5(x, self.joint_label, groups)
         x = self.l6(x, self.joint_label, groups)
         x = self.l7(x, self.joint_label, groups)
-        x = self.l8(x, self.joint_label, groups)
-        x = self.l9(x, self.joint_label, groups)
-        x = self.l10(x, self.joint_label, groups)
+        # x = self.l8(x, self.joint_label, groups)
+        # x = self.l9(x, self.joint_label, groups)
+        # x = self.l10(x, self.joint_label, groups)
 
         # N*M, C, T, V
         _ , C, T, V = x.size()
         # spatial temporal average pooling
-        x = x.view(N, M, C, -1)
+        x = x.reshape(N, M, C, -1)
         x = x.mean(3).mean(1)
         x = self.drop_out(x)
         x = self.fc(x)
