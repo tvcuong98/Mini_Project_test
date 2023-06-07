@@ -135,6 +135,23 @@ def one_hot_vector(labels):
 
     return labels_vector
 
+# adding this part for uniform sampling:
+def uniform_sampling(sequence, N):
+    """
+    This function implements the uniform sampling as a temporal augmentation method.
+
+    sequence: a length-T sequence (np.ndarray)
+    N: number of frames to be sampled from the sequence (int)
+    
+    returns: a length-N subsequence (np.ndarray)
+    """
+    T = len(sequence)
+    substrings = np.array_split(sequence, N)
+    subsequence = np.array([np.random.choice(sub) for sub in substrings])
+
+    return subsequence
+
+
 
 def split_train_val(train_indices, method='sklearn', ratio=0.05):
     """
@@ -151,6 +168,9 @@ def split_train_val(train_indices, method='sklearn', ratio=0.05):
         val_indices = train_indices[:val_num_skes]
         train_indices = train_indices[val_num_skes:]
         return train_indices, val_indices
+    
+
+
 
 
 def split_dataset(skes_joints, label, performer, camera, evaluation, save_path):
@@ -159,6 +179,15 @@ def split_dataset(skes_joints, label, performer, camera, evaluation, save_path):
     # Select validation set from training set
     # train_indices, val_indices = split_train_val(train_indices, m)
     # Save labels and num_frames for each sequence of each data set
+
+
+    
+    sample_size=35 # this is also for uniform sampling
+    # adding uniform sampling 
+    if sample_size is not None:
+        train_indices = uniform_sampling(train_indices, sample_size)
+        val_indices = uniform_sampling(val_indices, sample_size)
+
     print(skes_joints)
     print(skes_joints.shape)
     train_labels = label[train_indices]
