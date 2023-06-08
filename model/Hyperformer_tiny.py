@@ -264,10 +264,10 @@ class DynamicGroupTCN(nn.Module):
                  out_channels,
                  kernel_size=3,
                  stride=1,
-                 dilations=[1,2,3,4,5,6], # we still use these dilations, but we are going to use dilation 2 and 1 multiple times 
+                 dilations=[1,2,3,4], # we still use these dilations, but we are going to use dilation 2 and 1 multiple times 
                  residual=False,
                  residual_kernel_size=1,
-                 drop_prob=0.3):
+                 drop_prob=0.2):
 
         super(DynamicGroupTCN, self).__init__()
         assert out_channels % (len(dilations) + 2) == 0
@@ -295,7 +295,7 @@ class DynamicGroupTCN(nn.Module):
                 ),
                 nn.BatchNorm2d(branch_channels),
                 nn.ReLU(inplace=True),
-                
+                nn.Dropout(drop_prob),
                 TemporalConv(
                     branch_channels,
                     branch_channels,
@@ -437,7 +437,7 @@ class DJSF(nn.Module):
       return output
 """
 class DJSF(nn.Module):
-    def __init__(self, num_joints, num_channels, dilations=[3,4,5,6,7,8]):
+    def __init__(self, num_joints, num_channels, dilations=[5,6]):
         super(DJSF, self).__init__()
         self.num_joints = num_joints
         self.num_channels = num_channels
@@ -515,7 +515,7 @@ class unit_tcn(nn.Module):
 
 class MHSA(nn.Module):
     # A is adjacentcy matrix, and is hardcoded in the graph folder
-    def __init__(self, dim_in, dim, A, num_heads=6, qkv_bias=False, qk_scale=None, attn_drop=0.3, proj_drop=0.3, insert_cls_layer=0, pe=False, num_point=25,
+    def __init__(self, dim_in, dim, A, num_heads=6, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0, insert_cls_layer=0, pe=False, num_point=25,
                  outer=True, layer=0,
                  **kwargs):
         super().__init__()
@@ -626,7 +626,7 @@ class MHSA(nn.Module):
 
 # using conv2d implementation after dimension permutation
 class Mlp(nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.3,
+    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.,
                  num_heads=None):
         super().__init__()
         out_features = out_features or in_features
@@ -658,7 +658,7 @@ class Mlp(nn.Module):
 
 
 class unit_vit(nn.Module):
-    def __init__(self, dim_in, dim, A, num_of_heads, add_skip_connection=True,  qkv_bias=False, qk_scale=None, drop=0.3, attn_drop=0.3,
+    def __init__(self, dim_in, dim, A, num_of_heads, add_skip_connection=True,  qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
                  drop_path=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, layer=0,
                 insert_cls_layer=0, pe=False, num_point=25, **kwargs):
         super().__init__()
@@ -794,8 +794,8 @@ class Model(nn.Module):
         self.l7 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=7)
         # self.l8 = TCN_ViT_unit(24 * num_of_heads, 24 * num_of_heads, A, num_of_heads=num_of_heads)
         self.l8 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, stride=2, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=8)
-        self.l9 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=9)
-        self.l10 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=10)
+        # self.l9 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=9)
+        # self.l10 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=10)
         # standard ce loss
         self.fc = nn.Linear(24*num_of_heads, num_class)
         
@@ -852,8 +852,8 @@ class Model(nn.Module):
         x = self.l6(x, self.joint_label, groups)
         x = self.l7(x, self.joint_label, groups)
         x = self.l8(x, self.joint_label, groups)
-        x = self.l9(x, self.joint_label, groups)
-        x = self.l10(x, self.joint_label, groups)
+        # x = self.l9(x, self.joint_label, groups)
+        # x = self.l10(x, self.joint_label, groups)
 
         # N*M, C, T, V
         _ , C, T, V = x.size()
