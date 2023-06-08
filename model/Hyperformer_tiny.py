@@ -295,7 +295,7 @@ class DynamicGroupTCN(nn.Module):
                 ),
                 nn.BatchNorm2d(branch_channels),
                 nn.ReLU(inplace=True),
-                nn.Dropout(drop_prob), # hey I add some dropout
+                nn.Dropout(drop_prob),
                 TemporalConv(
                     branch_channels,
                     branch_channels,
