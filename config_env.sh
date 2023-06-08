@@ -32,7 +32,7 @@ pip install torchpack==0.0.6
 sed -i '4c\from typing import Iterable' /usr/local/lib/python3.10/dist-packages/torchpack/config.py
 # torch , tensorboardX install ( for cuda 11.7 )
 pip install tensorboardX
-pip install torch==2.0 torchvision==0.15 torchaudio
+pip install torch torchvision torchaudio
 # torch 2.0.1 torchvision 0.15.2
 #install other modules
 apt-get update
