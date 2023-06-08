@@ -6,7 +6,7 @@ import numpy as np
 
 ### torch version too old for timm
 ### https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/layers
-def drop_path(x, drop_prob: float = 0., training: bool = False, scale_by_keep: bool = True):
+def drop_path(x, drop_prob: float = 0.3, training: bool = False, scale_by_keep: bool = True):
     """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
     This is the same as the DropConnect impl I created for EfficientNet, etc networks, however,
     the original name is misleading as 'Drop Connect' is a different form of dropout in a separate paper...
@@ -14,7 +14,7 @@ def drop_path(x, drop_prob: float = 0., training: bool = False, scale_by_keep: b
     changing the layer and argument names to 'drop path' rather than mix DropConnect as a layer name and use
     'survival rate' as the argument.
     """
-    if drop_prob == 0. or not training: # if the drop probability =0 , or when the model is not training -> 
+    if drop_prob == 0.3 or not training: # if the drop probability =0 , or when the model is not training -> 
                                         # no dropout , just return the original
                                         # because : When inference , we just keep things the way is it, no dropout , or else it 
                                         # will ruin the result
@@ -512,7 +512,7 @@ class unit_tcn(nn.Module):
 
 class MHSA(nn.Module):
     # A is adjacentcy matrix, and is hardcoded in the graph folder
-    def __init__(self, dim_in, dim, A, num_heads=6, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0., insert_cls_layer=0, pe=False, num_point=25,
+    def __init__(self, dim_in, dim, A, num_heads=6, qkv_bias=False, qk_scale=None, attn_drop=0.3, proj_drop=0.3, insert_cls_layer=0, pe=False, num_point=25,
                  outer=True, layer=0,
                  **kwargs):
         super().__init__()
@@ -623,7 +623,7 @@ class MHSA(nn.Module):
 
 # using conv2d implementation after dimension permutation
 class Mlp(nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.,
+    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.3,
                  num_heads=None):
         super().__init__()
         out_features = out_features or in_features
@@ -655,7 +655,7 @@ class Mlp(nn.Module):
 
 
 class unit_vit(nn.Module):
-    def __init__(self, dim_in, dim, A, num_of_heads, add_skip_connection=True,  qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
+    def __init__(self, dim_in, dim, A, num_of_heads, add_skip_connection=True,  qkv_bias=False, qk_scale=None, drop=0.3, attn_drop=0.3,
                  drop_path=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, layer=0,
                 insert_cls_layer=0, pe=False, num_point=25, **kwargs):
         super().__init__()
