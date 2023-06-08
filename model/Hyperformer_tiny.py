@@ -266,7 +266,8 @@ class DynamicGroupTCN(nn.Module):
                  stride=1,
                  dilations=[1,2,3,4,5,6], # we still use these dilations, but we are going to use dilation 2 and 1 multiple times 
                  residual=False,
-                 residual_kernel_size=1):
+                 residual_kernel_size=1,
+                 drop_prob=0.3):
 
         super(DynamicGroupTCN, self).__init__()
         assert out_channels % (len(dilations) + 2) == 0
@@ -294,6 +295,7 @@ class DynamicGroupTCN(nn.Module):
                 ),
                 nn.BatchNorm2d(branch_channels),
                 nn.ReLU(inplace=True),
+                
                 TemporalConv(
                     branch_channels,
                     branch_channels,
@@ -317,7 +319,8 @@ class DynamicGroupTCN(nn.Module):
 
         self.branches.append(nn.Sequential(
             nn.Conv2d(in_channels, branch_channels, kernel_size=1, padding=0, stride=(stride,1)),
-            nn.BatchNorm2d(branch_channels)
+            nn.BatchNorm2d(branch_channels),
+            nn.ReLU(inplace=True)
         ))
         # Residual connection
         if not residual:
