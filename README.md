@@ -8,7 +8,7 @@ This branch is now the remote branch for uploading the code from the server mach
 + The augmented data have not been applied
 + It have >5000000 params , which is 2 times the original , and I hate it
 + The MultiGroup is used , instead of the MultiGroup_tiny, because the MaxPool layers is what kept the number of parameter down ( dont remove the Maxpool branch !!!!)
-IMPORTANT!!!! Because the version of code in my HOME machine is synchronized with the version of code in the branch Hyper_tiny1 of Github, but both of them are TONS-OF-CHANGES behind the version of code in SERVER machine . That's why, after the SERVER done training, please add, commit and push the local changes in SERVER machine onto github , as branch "Hyper_tiny1_Server" . But before doing that, you must change the NAME of the current local branch of the code in SERVER from Hyper_tiny1-> Hyper_tiny1_Server.
+IMPORTANT!!!! Because the version of code in my HOME machine is synchronized with the version of code in the branch Hyper_tiny1 of Github, but both of them are TONS-OF-CHANGES behind the version of code in SERVER machine . That's why, after the SERVER done training, please add, commit and push the local changes in SERVER machine onto github , as branch "Hyper_tiny1_server" . But before doing that, you must change the NAME of the current local branch of the code in SERVER from Hyper_tiny1-> Hyper_tiny1_server.
 So in the end, the Hyper_tiny1 branch will still be saved in github and in the Hyper_tiny1 local branch of my home machine, but will not be existed in the SERVER machine
 ## Attention on Hypergraph
 <p align="center">
