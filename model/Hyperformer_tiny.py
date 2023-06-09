@@ -264,7 +264,7 @@ class DynamicGroupTCN(nn.Module):
                  out_channels,
                  kernel_size=3,
                  stride=1,
-                 dilations=[1,2,3,4], # we still use these dilations, but we are going to use dilation 2 and 1 multiple times 
+                 dilations=[1,2], # we still use these dilations, but we are going to use dilation 2 and 1 multiple times 
                  residual=False,
                  residual_kernel_size=1,
                  drop_prob=0.2):

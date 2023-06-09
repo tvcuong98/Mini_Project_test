@@ -331,7 +331,7 @@ class Processor():
             num_workers=self.arg.num_worker,
             drop_last=False,
             worker_init_fn=init_seed)
-
+    # load the pretrained model ( if provided ) . if no pretrained model specified , continue with the initialized model
     def load_model(self):
         output_device = self.arg.device[0] if type(self.arg.device) is list else self.arg.device
         self.output_device = output_device
