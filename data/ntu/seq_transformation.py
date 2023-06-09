@@ -186,7 +186,7 @@ def split_dataset(skes_joints, label, performer, camera, evaluation, save_path):
     # adding uniform sampling 
     if sample_size is not None:
         train_indices = uniform_sampling(train_indices, sample_size)
-        val_indices = uniform_sampling(val_indices, sample_size)
+        test_indices = uniform_sampling(test_indices, sample_size)
 
     print(skes_joints)
     print(skes_joints.shape)
