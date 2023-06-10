@@ -175,6 +175,10 @@ def split_train_val(train_indices, method='sklearn', ratio=0.05):
 
 def split_dataset(skes_joints, label, performer, camera, evaluation, save_path):
     train_indices, test_indices = get_indices(performer, camera, evaluation)
+    print("here is the train indices shape : " + str(train_indices.shape))
+    print(train_indices)
+    print("here is the test indices shape:" + str(test_indices.shape))
+    print(test_indices)
     m = 'sklearn'  # 'sklearn' or 'numpy'
     # Select validation set from training set
     # train_indices, val_indices = split_train_val(train_indices, m)
