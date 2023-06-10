@@ -6,6 +6,13 @@ import numpy as np
 
 ### torch version too old for timm
 ### https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/layers
+from torchvision import transforms
+import random
+
+
+# Later, apply augmentations when loading data, for example:
+
+
 def drop_path(x, drop_prob: float = 0.3, training: bool = False, scale_by_keep: bool = True):
     """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
     This is the same as the DropConnect impl I created for EfficientNet, etc networks, however,
@@ -265,9 +272,9 @@ class DynamicGroupTCN(nn.Module):
                  kernel_size=3,
                  stride=1,
                  dilations=[1,2], # we still use these dilations, but we are going to use dilation 2 and 1 multiple times 
-                 residual=False,
+                 residual=True,
                  residual_kernel_size=1,
-                 drop_prob=0.2):
+                 drop_prob=0.3):
 
         super(DynamicGroupTCN, self).__init__()
         assert out_channels % (len(dilations) + 2) == 0
@@ -515,7 +522,7 @@ class unit_tcn(nn.Module):
 
 class MHSA(nn.Module):
     # A is adjacentcy matrix, and is hardcoded in the graph folder
-    def __init__(self, dim_in, dim, A, num_heads=6, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0, insert_cls_layer=0, pe=False, num_point=25,
+    def __init__(self, dim_in, dim, A, num_heads=6, qkv_bias=False, qk_scale=None, attn_drop=0.1, proj_drop=0.1, insert_cls_layer=0, pe=False, num_point=25,
                  outer=True, layer=0,
                  **kwargs):
         super().__init__()
@@ -766,7 +773,7 @@ class TCN_ViT_unit(nn.Module):
 
 class Model(nn.Module):
     def __init__(self, num_class=60, num_point=20, num_person=2, graph=None, graph_args=dict(), in_channels=3,
-                 drop_out=0, num_of_heads=9, joint_label=[]):
+                 drop_out=0.1, num_of_heads=9, joint_label=[]):
         super(Model, self).__init__()
 
         if graph is None:
@@ -836,7 +843,7 @@ class Model(nn.Module):
         groups = []
         for num in range(max(self.joint_label)+1):
             groups.append([ind for ind, element in enumerate(self.joint_label) if element==num])
-
+        
         N, C, T, V, M = x.size()
         x = x.permute(0, 4, 3, 1, 2).contiguous().view(N, M * V * C, T)
         x = self.data_bn(x)

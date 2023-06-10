@@ -136,20 +136,20 @@ def one_hot_vector(labels):
     return labels_vector
 
 # adding this part for uniform sampling:
-def uniform_sampling(sequence, N):
-    """
-    This function implements the uniform sampling as a temporal augmentation method.
+# def uniform_sampling(sequence, N):
+#     """
+#     This function implements the uniform sampling as a temporal augmentation method.
 
-    sequence: a length-T sequence (np.ndarray)
-    N: number of frames to be sampled from the sequence (int)
+#     sequence: a length-T sequence (np.ndarray)
+#     N: number of frames to be sampled from the sequence (int)
     
-    returns: a length-N subsequence (np.ndarray)
-    """
-    T = len(sequence)
-    substrings = np.array_split(sequence, N)
-    subsequence = np.array([np.random.choice(sub) for sub in substrings])
+#     returns: a length-N subsequence (np.ndarray)
+#     """
+#     T = len(sequence)
+#     substrings = np.array_split(sequence, N)
+#     subsequence = np.array([np.random.choice(sub) for sub in substrings])
 
-    return subsequence
+#     return subsequence
 
 
 
@@ -182,11 +182,11 @@ def split_dataset(skes_joints, label, performer, camera, evaluation, save_path):
 
 
     
-    sample_size=35 # this is also for uniform sampling
-    # adding uniform sampling 
-    if sample_size is not None:
-        train_indices = uniform_sampling(train_indices, sample_size)
-        test_indices = uniform_sampling(test_indices, sample_size)
+    # sample_size=35 # this is also for uniform sampling
+    # # adding uniform sampling 
+    # if sample_size is not None:
+    #     train_indices = uniform_sampling(train_indices, sample_size)
+    #     test_indices = uniform_sampling(test_indices, sample_size)
 
     print(skes_joints)
     print(skes_joints.shape)
