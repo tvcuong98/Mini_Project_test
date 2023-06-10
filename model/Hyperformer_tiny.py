@@ -13,7 +13,7 @@ import random
 # Later, apply augmentations when loading data, for example:
 
 
-def drop_path(x, drop_prob: float = 0.3, training: bool = False, scale_by_keep: bool = True):
+def drop_path(x, drop_prob: float = 0.1, training: bool = False, scale_by_keep: bool = True):
     """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
     This is the same as the DropConnect impl I created for EfficientNet, etc networks, however,
     the original name is misleading as 'Drop Connect' is a different form of dropout in a separate paper...
@@ -21,7 +21,7 @@ def drop_path(x, drop_prob: float = 0.3, training: bool = False, scale_by_keep: 
     changing the layer and argument names to 'drop path' rather than mix DropConnect as a layer name and use
     'survival rate' as the argument.
     """
-    if drop_prob == 0.3 or not training: # if the drop probability =0 , or when the model is not training -> 
+    if drop_prob == 0. or not training: # if the drop probability =0 , or when the model is not training -> 
                                         # no dropout , just return the original
                                         # because : When inference , we just keep things the way is it, no dropout , or else it 
                                         # will ruin the result

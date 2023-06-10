@@ -27,6 +27,7 @@ from tqdm import tqdm
 from torchlight.util import DictAction
 import resource
 import copy
+from torch_optimizer import RAdam
 from torch import linalg as LA
 
 
@@ -408,6 +409,11 @@ class Processor():
                 self.model.parameters(),
                 lr=self.arg.base_lr,
                 weight_decay=self.arg.weight_decay)
+        elif self.arg.optimizer == 'RAdam':
+            self.optimizer = RAdam(
+            self.model.parameters(),
+            lr=self.arg.base_lr,
+            weight_decay=self.arg.weight_decay)
         else:
             raise ValueError()
 
