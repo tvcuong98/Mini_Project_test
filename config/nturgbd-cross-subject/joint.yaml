@@ -12,7 +12,7 @@ train_feeder_args:
   random_shift: False
   random_move: False
   window_size: 64
-  normalization: False
+  normalization: True
   random_rot: True
   p_interval: [0.5, 1]
   vel: False
@@ -43,13 +43,13 @@ model_args:
 weight_decay: 0.0004
 base_lr: 0.025
 lr_decay_rate: 0.1
-step: [50, 70] # fixing this because the Hyper_tiny2 model get stuck at 50 epoch, cant converge
+step: [50, 70, 90] # fixing this because the Hyper_tiny2 model get stuck at 50 epoch, cant converge
 
 
 warm_up_epoch: 5
 
 # training
-device: [1]
+device: [0]
 batch_size: 128
 test_batch_size: 128
 num_epoch: 120

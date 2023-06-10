@@ -116,6 +116,7 @@ def align_frames(skes_joints, frames_cnt):
     aligned_skes_joints = np.zeros((num_skes, max_num_frames, 150), dtype=np.float32)
 
     for idx, ske_joints in enumerate(skes_joints):
+        print(ske_joints.shape)
         num_frames = ske_joints.shape[0]
         num_bodies = 1 if ske_joints.shape[1] == 75 else 2
         if num_bodies == 1:
@@ -125,6 +126,35 @@ def align_frames(skes_joints, frames_cnt):
             aligned_skes_joints[idx, :num_frames] = ske_joints
 
     return aligned_skes_joints
+"""
+Explaination:
+ for idx, ske_joints in enumerate(skes_joints):
+This line begins a loop that iterates through each sequence in skes_joints. enumerate() is a built-in Python function that allows you to iterate over elements of a list (or other iterable) along with their indices. In this case, idx is the index of the current sequence, and ske_joints is the sequence itself.
+
+num_frames = ske_joints.shape[0]
+This line gets the number of frames in the current sequence by accessing the shape of ske_joints and taking the first dimension (index 0).
+
+num_bodies = 1 if ske_joints.shape[1] == 75 else 2
+This line determines the number of bodies in each frame of the sequence based on the number of features. If there are 75 features, it assumes there's one body; if not, it assumes there are two bodies. It's inferred from the structure of the data that a single body has 75 features.
+
+if num_bodies == 1: and else:
+These lines form a conditional that determines what to do based on the number of bodies per frame.
+
+aligned_skes_joints[idx, :num_frames] = np.hstack((ske_joints, np.zeros_like(ske_joints)))
+If there's only one body, the sequence is extended to match the maximum frame count by horizontally stacking the sequence with an array of zeros of the same shape. np.hstack() is a NumPy function that stacks arrays in sequence horizontally (column wise). np.zeros_like() creates a new array of zeros with the same shape and type as the provided array. This effectively doubles the feature count, aligning it with sequences that have two bodies.
+
+aligned_skes_joints[idx, :num_frames] = ske_joints
+If there are two bodies, the sequence is added to the aligned_skes_joints array as is, because it already has the correct number of features.
+
+return aligned_skes_joints
+This line returns the final array of aligned sequences.
+"""   
+# def uniform_sampling(ske_joints,len_sub_timeframe): # the shape of ske_joints after align frame is 56578,300,150 ( num_of_files,max_frames,150)
+#                                                     # in each of that file(which is essentially called a sequence), 
+#                                                     # we are going to alter the position of frames, mix them together a little bit , in a specific way
+#     for idx,skejoint
+
+
 
 
 def one_hot_vector(labels):
