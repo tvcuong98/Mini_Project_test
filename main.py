@@ -303,7 +303,7 @@ class Processor():
         ## fix for invalid device id
             else:
               self.model = self.model
-              device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+              device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
               self.model.to(device)
         ## fix for invalid device id
         if self.arg.ema:
