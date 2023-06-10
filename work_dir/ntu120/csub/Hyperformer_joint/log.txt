@@ -1,2 +1,0 @@
-[ Mon May 29 19:48:16 2023 ] using warm up, epoch: 5
-[ Tue May 30 08:18:56 2023 ] using warm up, epoch: 5
