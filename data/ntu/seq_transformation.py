@@ -116,9 +116,8 @@ def align_frames(skes_joints, frames_cnt):
     aligned_skes_joints = np.zeros((num_skes, max_num_frames, 150), dtype=np.float32)
 
     for idx, ske_joints in enumerate(skes_joints):
-        print(ske_joints.shape)
         num_frames = ske_joints.shape[0]
-        num_bodies = 1 if ske_joints.shape[1] == 75 else 2
+        num_bodies = 1 if ske_joints.shape[1] == 75 else 2 
         if num_bodies == 1:
             aligned_skes_joints[idx, :num_frames] = np.hstack((ske_joints,
                                                                np.zeros_like(ske_joints)))
@@ -152,7 +151,8 @@ This line returns the final array of aligned sequences.
 # def uniform_sampling(ske_joints,len_sub_timeframe): # the shape of ske_joints after align frame is 56578,300,150 ( num_of_files,max_frames,150)
 #                                                     # in each of that file(which is essentially called a sequence), 
 #                                                     # we are going to alter the position of frames, mix them together a little bit , in a specific way
-#     for idx,skejoint
+#     for idx,skejoint in enumerate(skes_joints):
+
 
 
 
