@@ -147,7 +147,7 @@ If there are two bodies, the sequence is added to the aligned_skes_joints array 
 
 return aligned_skes_joints
 This line returns the final array of aligned sequences.
-"""   
+"""
 # def uniform_sampling(ske_joints,len_sub_timeframe): # the shape of ske_joints after align frame is 56578,300,150 ( num_of_files,max_frames,150)
 #                                                     # in each of that file(which is essentially called a sequence), 
 #                                                     # we are going to alter the position of frames, mix them together a little bit , in a specific way
