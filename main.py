@@ -429,7 +429,7 @@ class Processor():
             yaml.dump(arg_dict, f)
 
     def adjust_learning_rate(self, epoch):
-        if self.arg.optimizer == 'SGD' or self.arg.optimizer == 'Adam' or self.arg.optimizer == 'NAdam':
+        if self.arg.optimizer == 'SGD' or self.arg.optimizer == 'Adam' or self.arg.optimizer == 'NAdam' or self.arg.optimizer == "RAdam":
             if epoch < self.arg.warm_up_epoch:
                 lr = self.arg.base_lr * (epoch + 1) / self.arg.warm_up_epoch
             else:
