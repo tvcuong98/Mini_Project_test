@@ -40,8 +40,8 @@ model_args:
   joint_label: [0, 4, 2, 2, 2, 2, 1, 1, 2, 2, 1, 1, 2, 3, 3, 3, 2, 3, 3, 3, 1, 0, 1, 0, 1]
 
 #optim
-weight_decay: 0.0004
-base_lr: 0.025
+weight_decay: 0.0005
+base_lr: 0.1
 lr_decay_rate: 0.1
 step: [50, 70, 90] # fixing this because the Hyper_tiny2 model get stuck at 50 epoch, cant converge
 
@@ -50,7 +50,7 @@ warm_up_epoch: 5
 
 # training
 device: [0]
-batch_size: 30
-test_batch_size: 30
+batch_size: 115
+test_batch_size: 115
 num_epoch: 120
 nesterov: True

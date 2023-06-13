@@ -591,10 +591,10 @@ class MHSA(nn.Module):
     def forward(self, x, e):
         N, C, T, V = x.shape
         kv = self.kv(x).reshape(N, 2, self.num_heads, self.dim // self.num_heads, T, V).permute(1, 0, 4, 2, 5, 3)
-        k, v = kv[0], kv[1]
+        k, v = kv[0], kv[1] # achieve key and value
 
         ## n t h v c
-        q = self.q(x).reshape(N, self.num_heads, self.dim // self.num_heads, T, V).permute(0, 3, 1, 4, 2)
+        q = self.q(x).reshape(N, self.num_heads, self.dim // self.num_heads, T, V).permute(0, 3, 1, 4, 2) # achieve query
 
         e_k = e.reshape(N, self.num_heads, self.dim // self.num_heads, T, V).permute(0, 3, 1, 4, 2)
         #
@@ -607,6 +607,13 @@ class MHSA(nn.Module):
         #
         c = torch.einsum("bthnc, bthmc->bthnm", q, e_k)
         d = torch.einsum("hc, bthmc->bthm", self.w1, e_k).unsqueeze(-2)
+        #b: Batch dimension.
+        #t: Time dimension (sequence length).
+        #h: Number of attention heads.
+        #n: Number of queries.
+        #c: Number of query channels (features).
+        #m: Number of keys.
+        #n: Number of key channels (features).
 
 
         a = q @ k.transpose(-2, -1)

@@ -8,6 +8,7 @@ import logging
 import h5py
 from sklearn.model_selection import train_test_split
 import glob
+import random
 
 
 root_path = './'
@@ -125,6 +126,50 @@ def align_frames(skes_joints, frames_cnt):
             aligned_skes_joints[idx, :num_frames] = ske_joints
 
     return aligned_skes_joints
+def uniform_sampling(sequence,num_frames=64,pre_subsequence_length=4): #num_frames is window_size
+    # the subsequence here is not after the uniform sampling
+    # but before it, when we divide sequence into 64 subsequences, each subsequence has length of 4 frames
+    
+
+    sampled_subsequence=[] # this will have length 64
+    for i in range(num_frames): #num_frames=64
+        start_index = i * pre_subsequence_length
+        end_index = start_index + pre_subsequence_length
+        pre_subsequence = sequence[start_index:end_index] 
+        sampled_frame = random.choice(pre_subsequence)
+        sampled_subsequence.append(sampled_frame)
+    return sampled_subsequence
+def generate_sampled_subsequences(sequence, num_frames=64):
+    """
+    Generate multiple non-overlapping subsequences using uniform sampling.
+
+    :param sequence: A list representing the skeleton sequence.
+    :param num_frames: The number of frames to sample from the sequence.
+    :param num_subsequences: The number of subsequences to generate.
+    :return: A list of uniformly sampled subsequences.
+    """
+    pre_subsequence_length = int(len(sequence)/num_frames) # pre_subsequence_length=4
+    # sequence.extend(sequence[:num_frame_padding])
+    final_sampled_sequence = [] # we will want to flatten the sampled_subsequences(4,64,150) , this is a little bit diffrent from usual
+    for i in range(pre_subsequence_length):
+        random.seed(i)
+        subsequence = uniform_sampling(sequence, num_frames,pre_subsequence_length)
+        for frame in subsequence:
+            final_sampled_sequence.append(frame)
+    remaining_frames = sequence[(pre_subsequence_length*num_frames):len(sequence)]
+    for remaining_frame in remaining_frames:
+        final_sampled_sequence.append(remaining_frame)
+    return final_sampled_sequence # shape is (300,150)
+
+def uniformed_skes_joints(skes_joints,num_frames=64):
+    uniformed_skes_joints = []
+    for ske_joints in skes_joints:
+        ske_joints = generate_sampled_subsequences(ske_joints,num_frames)
+        uniformed_skes_joints.append(ske_joints)
+    return uniformed_skes_joints
+        
+
+
 """
 Explaination:
  for idx, ske_joints in enumerate(skes_joints):
@@ -375,6 +420,7 @@ if __name__ == '__main__':
     skes_joints = seq_translation(skes_joints)
 
     skes_joints = align_frames(skes_joints, frames_cnt)  # aligned to the same frame length
+    skes_joints = uniformed_skes_joints(skes_joints=skes_joints,num_frames=64)
     evaluations = ['CS', 'CV']
     for evaluation in evaluations:
         split_dataset(skes_joints, label, performer, camera, evaluation, save_path)
