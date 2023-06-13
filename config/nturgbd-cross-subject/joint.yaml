@@ -41,9 +41,9 @@ model_args:
 
 #optim
 weight_decay: 0.0004
-base_lr: 0.025
+base_lr: 0.00025
 lr_decay_rate: 0.1
-step: [80, 95]
+step: [80, 95,110]
 
 
 warm_up_epoch: 5
@@ -52,5 +52,5 @@ warm_up_epoch: 5
 device: [1]
 batch_size: 32
 test_batch_size: 32
-num_epoch: 100
+num_epoch: 140
 nesterov: True

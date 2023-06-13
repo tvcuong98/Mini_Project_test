@@ -6,7 +6,7 @@ import numpy as np
 
 ### torch version too old for timm
 ### https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/layers
-def drop_path(x, drop_prob: float = 0.3, training: bool = False, scale_by_keep: bool = True):
+def drop_path(x, drop_prob: float = 0., training: bool = False, scale_by_keep: bool = True):
     """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
     This is the same as the DropConnect impl I created for EfficientNet, etc networks, however,
     the original name is misleading as 'Drop Connect' is a different form of dropout in a separate paper...
@@ -14,7 +14,7 @@ def drop_path(x, drop_prob: float = 0.3, training: bool = False, scale_by_keep: 
     changing the layer and argument names to 'drop path' rather than mix DropConnect as a layer name and use
     'survival rate' as the argument.
     """
-    if drop_prob == 0.3 or not training: # if the drop probability =0 , or when the model is not training -> 
+    if drop_prob == 0. or not training: # if the drop probability =0 , or when the model is not training -> 
                                         # no dropout , just return the original
                                         # because : When inference , we just keep things the way is it, no dropout , or else it 
                                         # will ruin the result
@@ -264,7 +264,7 @@ class DynamicGroupTCN(nn.Module):
                  out_channels,
                  kernel_size=3,
                  stride=1,
-                 dilations=[1,2,3,4], # we still use these dilations, but we are going to use dilation 2 and 1 multiple times 
+                 dilations=[1,2], # we still use these dilations, but we are going to use dilation 2 and 1 multiple times 
                  residual=False,
                  residual_kernel_size=1,
                  drop_prob=0.2):
@@ -381,6 +381,83 @@ class DynamicGroupTCN(nn.Module):
         out = out.permute(0,2,1,3)
         return out
 """
+
+class DynamicGroupTCN_mini(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size=3,
+                 stride=1,
+                 dilations=[1,2], # we still use these dilations, but we are going to use dilation 2 and 1 multiple times 
+                 residual=False,
+                 residual_kernel_size=1,
+                 drop_prob=0.2):
+
+        super(DynamicGroupTCN_mini, self).__init__()
+        assert out_channels % (len(dilations)) == 0
+
+        # Multiple branches of temporal convolution
+        self.num_branches = len(dilations) 
+
+        # The "+2" in the line is because the architecture includes two additional branches apart from the ones created by dilations. 
+        # These two branches are a 1x1 convolution and a 3x1 max pooling layer.
+        branch_channels = out_channels // self.num_branches # this already divided the channels into branches (like our group)
+        if type(kernel_size) == list:
+            assert len(kernel_size) == len(dilations) # we dont use this anymore, because now we decide to have 6 branches in total:
+        else:
+            kernel_size = [kernel_size]*len(dilations) # we dont use this anymore, because now we decide to have 6 branches in total:
+
+
+        # Temporal Convolution branches
+        self.branches = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(
+                    in_channels,
+                    branch_channels,
+                    kernel_size=1,
+                    padding=0
+                ),
+                nn.BatchNorm2d(branch_channels),
+                nn.ReLU(inplace=True),
+                nn.Dropout(drop_prob),
+                TemporalConv(
+                    branch_channels,
+                    branch_channels,
+                    kernel_size=ks,
+                    stride=stride,
+                    dilation=dilation
+                ),
+            )
+            for ks, dilation in zip(kernel_size, dilations)
+        ])
+
+        # Residual connection
+        if not residual:
+            self.residual = lambda x: 0
+        elif (in_channels == out_channels) and (stride == 1):
+            self.residual = lambda x: x
+        else:
+            self.residual = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=residual_kernel_size, stride=stride),
+                nn.BatchNorm2d(out_channels)
+            )
+        # print(len(self.branches))
+        # initialize
+        self.apply(weights_init)
+
+    # fix this forward function so that it can process 2 param too
+    def forward(self, x):
+        # Input dim: (N,C,T,V)
+        res = self.residual(x)
+        branch_outs = []
+        for branch in self.branches:
+            out = branch(x)
+            branch_outs.append(out)
+
+        out = torch.cat(branch_outs, dim=1)
+        out += res
+        return out
+
 # End of "This is the fixed MultiScale_TemporalConv"
 
 
@@ -515,7 +592,7 @@ class unit_tcn(nn.Module):
 
 class MHSA(nn.Module):
     # A is adjacentcy matrix, and is hardcoded in the graph folder
-    def __init__(self, dim_in, dim, A, num_heads=6, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0, insert_cls_layer=0, pe=False, num_point=25,
+    def __init__(self, dim_in, dim, A, num_heads=6, qkv_bias=False, qk_scale=None, attn_drop=0.1, proj_drop=0.1, insert_cls_layer=0, pe=False, num_point=25,
                  outer=True, layer=0,
                  **kwargs):
         super().__init__()
@@ -658,8 +735,8 @@ class Mlp(nn.Module):
 
 
 class unit_vit(nn.Module):
-    def __init__(self, dim_in, dim, A, num_of_heads, add_skip_connection=True,  qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0, act_layer=nn.GELU, norm_layer=nn.LayerNorm, layer=0,
+    def __init__(self, dim_in, dim, A, num_of_heads, add_skip_connection=True,  qkv_bias=False, qk_scale=None, drop=0.2, attn_drop=0.,
+                 drop_path=0.1, act_layer=nn.GELU, norm_layer=nn.LayerNorm, layer=0,
                 insert_cls_layer=0, pe=False, num_point=25, **kwargs):
         super().__init__()
         self.norm1 = norm_layer(dim_in)
@@ -766,7 +843,7 @@ class TCN_ViT_unit(nn.Module):
 
 class Model(nn.Module):
     def __init__(self, num_class=60, num_point=20, num_person=2, graph=None, graph_args=dict(), in_channels=3,
-                 drop_out=0, num_of_heads=9, joint_label=[]):
+                 drop_out=0.1, num_of_heads=9, joint_label=[]):
         super(Model, self).__init__()
 
         if graph is None:
@@ -793,7 +870,7 @@ class Model(nn.Module):
         self.l6 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=6)
         self.l7 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=7)
         # self.l8 = TCN_ViT_unit(24 * num_of_heads, 24 * num_of_heads, A, num_of_heads=num_of_heads)
-        self.l8 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, stride=2, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=8)
+        # self.l8 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, stride=2, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=8)
         # self.l9 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=9)
         # self.l10 = TCN_ViT_unit(24*num_of_heads, 24*num_of_heads, A, residual=True, num_of_heads=num_of_heads, pe=True, num_point=num_point, layer=10)
         # standard ce loss
@@ -851,7 +928,7 @@ class Model(nn.Module):
         x = self.l5(x, self.joint_label, groups)
         x = self.l6(x, self.joint_label, groups)
         x = self.l7(x, self.joint_label, groups)
-        x = self.l8(x, self.joint_label, groups)
+        # x = self.l8(x, self.joint_label, groups)
         # x = self.l9(x, self.joint_label, groups)
         # x = self.l10(x, self.joint_label, groups)
 
